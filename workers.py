@@ -7,6 +7,9 @@ class Employee:
         self.rate: float = rate
         self.number: str = str(uuid.uuid4())[:8]
         
+    def get_id(self) -> str:
+        return self.number
+        
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.number})"
 
@@ -24,7 +27,7 @@ class ProductionWorker(Employee):
     def change_shift(self, shift: int) -> None:
         self.number_of_shift = shift if shift in (1, 2) else "Error"
 
-    def salary(self) -> float:
+    def day_salary(self) -> float:
         match self.number_of_shift:
             case 1:
                 return self.rate * 8
@@ -33,16 +36,43 @@ class ProductionWorker(Employee):
 
 
 class ShiftSupervisor(Employee):
+    
     def __init__(self, name: str, rate: float):
         super().__init__(name, rate)
+        self.shifts: list[Shift] = [] # Supervisor can manage more than one shift
         
+    def add_shift(self, shift) -> None:
+        if not shift.get_supervisor():
+            shift.set_supervisor(self)
+            self.shifts.append(shift)
+        else:
+            raise f"Shift already has a supervisor!"
+        
+    def remove_shift(self, shift) -> None:
+        for s in self.shifts:
+            if s == shift:
+                self.shifts.remove(s)
+        else:
+            raise f"Supervisor {self.get_id()} doesn't manage this shift"
+    
+    def get_shifts(self) -> list[object]:
+        return self.shifts
+    
+    def day_salary(self) -> float:
+        return self.rate * 8
+    
+    def __str__(self) -> str:
+        res = "\n-------\n"
+        res += f"Shift Supervisor {self.name}. ID: {self.get_id()}\nManaged shifts: {self.get_shifts()}"
+        return res
+    
         
 class Shift:
     
     # There can be only one supervisor for one shift, but many workers (one to many)
-    def __init__(self, no: int, supervisor: ShiftSupervisor, *workers: ProductionWorker):
-        self.__no = no
-        self.__supervisor: ShiftSupervisor = supervisor
+    def __init__(self, no: int, supervisor: ShiftSupervisor = None, *workers: ProductionWorker):
+        self.__no: int = no
+        self.set_supervisor(supervisor)
         self.__workers: list[ProductionWorker] = list(workers)
 
     def get_no(self) -> int:
@@ -68,17 +98,51 @@ class Shift:
             raise f"No such worker on shift {self.get_no()}"
         
     def __repr__(self) -> str:
-        return f"Shift {self.get_no()} ( {self.get_supervisor()}, {self.get_workers()} )"
+        return f"Shift {self.get_no()} ( {self.get_supervisor().__repr__()}, {len(self.get_workers())} workers)"
         
 
+# SalaryCalculator is a utility class for computing salary of every employee
+class SalaryCalculator:
+    periods = ("day", "month", "year")
+    
+    @classmethod
+    def calculate_salary(cls, employee: Employee, period: str) -> float:
+        if period not in cls.periods:
+            raise f"Wrong time period!"
+        if not isinstance(employee, Employee):
+            raise f"Unknown employee occupancy, can't calculate salary!"
+        
+        match period:
+            case "day":
+                return employee.day_salary()
+            case "month":
+                return employee.day_salary() * 20
+            case "year":
+                if isinstance(employee, ProductionWorker):
+                    return employee.day_salary() * 240
+                if isinstance(employee, ShiftSupervisor):
+                    return employee.day_salary() * 240 + cls.calculate_supervisor_bonus(employee)
+                
+    # Supervisors will have annual bonus for the number of people in their shift
+    @staticmethod
+    def calculate_supervisor_bonus(supervisor: ShiftSupervisor) -> float:
+        bonus_coef = 1000
+        workers = 0
+        for shift in supervisor.get_shifts():
+            workers += len(shift.get_workers())
+        
+        return workers * bonus_coef
+
+
+# This is demo class for running simple business simulation and calculate supervisor's salary
 class Fabric:
     @staticmethod
     def demo():
         boss_1 = ShiftSupervisor("Big Boss", 8.99)
         boss_2 = ShiftSupervisor("Small Boss", 6.99)
 
-        shift_1 = Shift(1, boss_1)
-        shift_2 = Shift(2, boss_2)
+        shift_1 = Shift(1)
+        shift_2 = Shift(2)
 
 
         ProductionWorker("Lox", 1, shift_1)
@@ -89,9 +153,11 @@ class Fabric:
         ProductionWorker("Tom", 3, shift_2)
         ProductionWorker("Jones", 1.5, shift_2)
         ProductionWorker("Katie", 1.8, shift_2)
-
-        print(shift_1)
-        print(shift_2)
+        
+        boss_1.add_shift(shift_1)
+        boss_2.add_shift(shift_2)
+        
+        print(SalaryCalculator.calculate_salary(boss_1, "year"))
         
         
 Fabric.demo()
